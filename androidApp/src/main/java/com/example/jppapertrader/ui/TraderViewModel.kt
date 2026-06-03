@@ -42,7 +42,7 @@ class TraderViewModel @Inject constructor(
                     runs = repository.backtestRuns(),
                     chatGptSettings = settings,
                     tradePrice = if (it.tradePrice.isBlank()) repository.latestPrice(it.tradeCode).toString() else it.tradePrice,
-                    status = "Ready",
+                    status = "準備完了",
                 )
             }
         }
@@ -63,14 +63,14 @@ class TraderViewModel @Inject constructor(
             it.copy(
                 apiKeyInput = "",
                 chatGptSettings = repository.settings(),
-                status = "ChatGPT settings saved.",
+                status = "ChatGPT設定を保存しました。",
             )
         }
     }
 
     fun clearApiKey() {
         repository.clearApiKey()
-        _uiState.update { it.copy(apiKeyInput = "", chatGptSettings = repository.settings(), status = "ChatGPT API key cleared.") }
+        _uiState.update { it.copy(apiKeyInput = "", chatGptSettings = repository.settings(), status = "ChatGPT APIキーを削除しました。") }
     }
 
     fun reset() {
@@ -102,14 +102,14 @@ class TraderViewModel @Inject constructor(
         val quantity = state.tradeQuantity.toIntOrNull()
         val price = state.tradePrice.toDoubleOrNull()
         if (quantity == null || price == null) {
-            _uiState.update { it.copy(message = "Quantity and price must be valid numbers.", status = "Input error") }
+            _uiState.update { it.copy(message = "数量と価格は有効な数値を入力してください。", status = "入力エラー") }
             return
         }
         runAction { action(state.tradeCode, quantity, price) }
     }
 
     private fun runAction(action: () -> String) {
-        _uiState.update { it.copy(status = "Running...") }
+        _uiState.update { it.copy(status = "実行中...") }
         viewModelScope.launch(Dispatchers.IO) {
             val message = runCatching(action).getOrElse { it.message ?: it.toString() }
             _uiState.update {
@@ -120,7 +120,7 @@ class TraderViewModel @Inject constructor(
                     scores = repository.scores(),
                     runs = repository.backtestRuns(),
                     chatGptSettings = repository.settings(),
-                    status = "Done",
+                    status = "完了",
                 )
             }
         }
@@ -140,8 +140,8 @@ data class TraderUiState(
     val tradePrice: String = "",
     val backtestStart: String = defaultStartDate(),
     val backtestEnd: String = defaultEndDate(),
-    val message: String = "Standalone data is stored on this device.",
-    val status: String = "Loading",
+    val message: String = "スタンドアロンデータはこの端末内に保存されます。",
+    val status: String = "読み込み中",
 )
 
 private fun defaultEndDate(): String {

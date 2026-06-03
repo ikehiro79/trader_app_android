@@ -19,7 +19,7 @@ class TraderRepository @Inject constructor(
     fun regeneratePrices(): String = store.regeneratePrices()
     fun reset(): String {
         store.resetSeed()
-        return "Local database reset with TOPIX Core30 seed data."
+        return "ローカルデータベースをTOPIX Core30の初期データでリセットしました。"
     }
 
     fun latestPrice(code: String): Double = store.latestPrice(code)
@@ -56,8 +56,8 @@ data class ChatGptSettings(
 ) {
     val maskedKey: String
         get() = when {
-            apiKey.isBlank() -> "No API key saved."
-            apiKey.length < 12 -> "Saved key: saved"
-            else -> "Saved key: ${apiKey.take(7)}...${apiKey.takeLast(4)}"
+            apiKey.isBlank() -> "APIキーは未保存です。"
+            apiKey.length < 12 -> "保存済みキー: 保存済み"
+            else -> "保存済みキー: ${apiKey.take(7)}...${apiKey.takeLast(4)}"
         }
 }

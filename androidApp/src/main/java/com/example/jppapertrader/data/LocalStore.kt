@@ -102,9 +102,9 @@ class LocalStore @Inject constructor(
             ScoreItem(
                 code = item.code,
                 action = when {
-                    score > 0.03 -> "BUY"
-                    score < -0.03 -> "AVOID"
-                    else -> "HOLD"
+                    score > 0.03 -> "買い候補"
+                    score < -0.03 -> "見送り"
+                    else -> "様子見"
                 },
                 score = score,
                 latestPrice = item.latestPrice,
@@ -117,7 +117,7 @@ class LocalStore @Inject constructor(
             execSQL("DELETE FROM prices")
             seedPrices(this)
         }
-        return "Generated local price history for ${TOPIX_CORE30.size} symbols."
+        return "${TOPIX_CORE30.size}銘柄分のローカル価格履歴を生成しました。"
     }
 
     fun latestPrice(code: String): Double = latestPrice(readableDatabase, code)
@@ -126,20 +126,20 @@ class LocalStore @Inject constructor(
         val db = readableDatabase
         val normalizedCode = code.trim()
         val cost = quantity * price
-        if (normalizedCode.isEmpty()) return "BLOCK: code is required."
-        if (!exists(db, normalizedCode)) return "REVIEW: code is not in the active watchlist."
-        if (quantity <= 0 || price <= 0.0) return "BLOCK: quantity and price must be positive."
+        if (normalizedCode.isEmpty()) return "不可: 銘柄コードを入力してください。"
+        if (!exists(db, normalizedCode)) return "要確認: 有効なウォッチリストにない銘柄です。"
+        if (quantity <= 0 || price <= 0.0) return "不可: 数量と価格は正の数で入力してください。"
         val cash = cashBalance(db)
-        if (cost > cash) return "BLOCK: not enough cash. Needed ${cost.yen()}, cash ${cash.yen()}."
+        if (cost > cash) return "不可: 現金が不足しています。必要額 ${cost.yen()}、現金 ${cash.yen()}。"
         val old = priceDaysAgo(db, normalizedCode, 20)
         val score = if (old <= 0.0) 0.0 else price / old - 1.0
-        if (score < -0.05) return "REVIEW: weak 20-day momentum. Score ${score.percent()}."
-        return "ALLOW: estimated cost ${cost.yen()}, momentum score ${score.percent()}."
+        if (score < -0.05) return "要確認: 20日モメンタムが弱いです。スコア ${score.percent()}。"
+        return "許可: 概算購入額 ${cost.yen()}、モメンタムスコア ${score.percent()}。"
     }
 
     fun buy(code: String, quantity: Int, price: Double): String {
         val check = buyCheck(code, quantity, price)
-        if (check.startsWith("BLOCK")) return check
+        if (check.startsWith("不可")) return check
         val normalizedCode = code.trim()
         writableDatabase.transaction {
             rawQuery("SELECT quantity, avg_price FROM positions WHERE code = ?", arrayOf(normalizedCode)).use { cursor ->
@@ -156,7 +156,7 @@ class LocalStore @Inject constructor(
             insertTrade(this, normalizedCode, "BUY", quantity, price)
             upsertLatestPrice(this, normalizedCode, price)
         }
-        return "Bought $quantity shares of $normalizedCode at ${price.number()}."
+        return "$normalizedCode を ${price.number()}円で $quantity 株買いました。"
     }
 
     fun sell(code: String, quantity: Int, price: Double): String {
@@ -165,12 +165,12 @@ class LocalStore @Inject constructor(
         writableDatabase.transaction {
             rawQuery("SELECT quantity FROM positions WHERE code = ?", arrayOf(normalizedCode)).use { cursor ->
                 if (!cursor.moveToFirst()) {
-                    message = "BLOCK: no position for $normalizedCode."
+                    message = "不可: $normalizedCode の保有がありません。"
                     return@transaction
                 }
                 val oldQty = cursor.getInt(0)
                 if (quantity <= 0 || quantity > oldQty) {
-                    message = "BLOCK: sell quantity must be between 1 and $oldQty."
+                    message = "不可: 売却数量は1から$oldQty の範囲で入力してください。"
                     return@transaction
                 }
                 if (quantity == oldQty) {
@@ -181,7 +181,7 @@ class LocalStore @Inject constructor(
             }
             insertTrade(this, normalizedCode, "SELL", quantity, price)
             upsertLatestPrice(this, normalizedCode, price)
-            message = "Sold $quantity shares of $normalizedCode at ${price.number()}."
+            message = "$normalizedCode を ${price.number()}円で $quantity 株売りました。"
         }
         return message
     }
@@ -218,7 +218,7 @@ class LocalStore @Inject constructor(
             "total_return" to totalReturn,
             "trades_count" to trades,
         ))
-        return "Final value: ${cash.yen()}\nTotal return: ${totalReturn.percent()}\nTrades: $trades"
+        return "最終資産: ${cash.yen()}\n総リターン: ${totalReturn.percent()}\n売買回数: $trades"
     }
 
     fun backtestRuns(): List<BacktestRun> {
@@ -356,37 +356,37 @@ class LocalStore @Inject constructor(
         private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 
         private val TOPIX_CORE30 = listOf(
-            "2914" to "Japan Tobacco Inc.",
-            "3382" to "Seven & i Holdings Co., Ltd.",
-            "4063" to "Shin-Etsu Chemical Co., Ltd.",
-            "4452" to "Kao Corporation",
-            "4502" to "Takeda Pharmaceutical Company Limited",
-            "4503" to "Astellas Pharma Inc.",
-            "4568" to "Daiichi Sankyo Company, Limited",
-            "6098" to "Recruit Holdings Co., Ltd.",
-            "6501" to "Hitachi, Ltd.",
-            "6758" to "Sony Group Corporation",
-            "6861" to "Keyence Corporation",
-            "6954" to "Fanuc Corporation",
-            "6981" to "Murata Manufacturing Co., Ltd.",
-            "7011" to "Mitsubishi Heavy Industries, Ltd.",
-            "7203" to "Toyota Motor Corporation",
-            "7267" to "Honda Motor Co., Ltd.",
-            "7751" to "Canon Inc.",
-            "7974" to "Nintendo Co., Ltd.",
-            "8031" to "Mitsui & Co., Ltd.",
-            "8035" to "Tokyo Electron Limited",
-            "8058" to "Mitsubishi Corporation",
-            "8306" to "Mitsubishi UFJ Financial Group, Inc.",
-            "8316" to "Sumitomo Mitsui Financial Group, Inc.",
-            "8411" to "Mizuho Financial Group, Inc.",
-            "8766" to "Tokio Marine Holdings, Inc.",
-            "8802" to "Mitsubishi Estate Co., Ltd.",
-            "9020" to "East Japan Railway Company",
-            "9022" to "Central Japan Railway Company",
-            "9432" to "NTT, Inc.",
-            "9433" to "KDDI Corporation",
-            "9984" to "SoftBank Group Corp.",
+            "2914" to "日本たばこ産業",
+            "3382" to "セブン＆アイ・ホールディングス",
+            "4063" to "信越化学工業",
+            "4452" to "花王",
+            "4502" to "武田薬品工業",
+            "4503" to "アステラス製薬",
+            "4568" to "第一三共",
+            "6098" to "リクルートホールディングス",
+            "6501" to "日立製作所",
+            "6758" to "ソニーグループ",
+            "6861" to "キーエンス",
+            "6954" to "ファナック",
+            "6981" to "村田製作所",
+            "7011" to "三菱重工業",
+            "7203" to "トヨタ自動車",
+            "7267" to "本田技研工業",
+            "7751" to "キヤノン",
+            "7974" to "任天堂",
+            "8031" to "三井物産",
+            "8035" to "東京エレクトロン",
+            "8058" to "三菱商事",
+            "8306" to "三菱UFJフィナンシャル・グループ",
+            "8316" to "三井住友フィナンシャルグループ",
+            "8411" to "みずほフィナンシャルグループ",
+            "8766" to "東京海上ホールディングス",
+            "8802" to "三菱地所",
+            "9020" to "東日本旅客鉄道",
+            "9022" to "東海旅客鉄道",
+            "9432" to "NTT",
+            "9433" to "KDDI",
+            "9984" to "ソフトバンクグループ",
         )
     }
 }

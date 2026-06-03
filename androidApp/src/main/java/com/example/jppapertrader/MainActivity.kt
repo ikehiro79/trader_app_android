@@ -14,7 +14,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -97,29 +96,29 @@ private fun TraderApp(state: TraderUiState, viewModel: TraderViewModel) {
 @Composable
 private fun Header(state: TraderUiState, viewModel: TraderViewModel) {
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("JP Paper Trader", style = MaterialTheme.typography.headlineMedium)
-        Text("Standalone Android app using Kotlin, Compose, Material3, MVVM, and Hilt.")
-        Text("Status: ${state.status}", style = MaterialTheme.typography.labelLarge)
+        Text("日本株ペーパートレーダー", style = MaterialTheme.typography.headlineMedium)
+        Text("端末内データだけで動く、株式ペーパートレード用のAndroidアプリです。")
+        Text("状態: ${state.status}", style = MaterialTheme.typography.labelLarge)
         Text(state.message)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = viewModel::refresh) { Text("Refresh") }
-            TextButton(onClick = viewModel::reset) { Text("Reset") }
+            Button(onClick = viewModel::refresh) { Text("更新") }
+            TextButton(onClick = viewModel::reset) { Text("初期化") }
         }
     }
 }
 
 @Composable
 private fun PortfolioCard(summary: PortfolioSummary) {
-    AppCard("Portfolio") {
-        Text("Cash: ${summary.cash.yen()}")
-        Text("Market value: ${summary.marketValue.yen()}")
-        Text("Total value: ${summary.totalValue.yen()}")
+    AppCard("ポートフォリオ") {
+        Text("現金: ${summary.cash.yen()}")
+        Text("評価額: ${summary.marketValue.yen()}")
+        Text("総資産: ${summary.totalValue.yen()}")
         Spacer(Modifier.height(8.dp))
         if (summary.positions.isEmpty()) {
-            Text("No positions.")
+            Text("保有銘柄はありません。")
         } else {
             summary.positions.forEach {
-                Text("${it.code} qty ${it.quantity} avg ${it.averagePrice.number()} latest ${it.latestPrice.number()} value ${it.value.yen()}")
+                Text("${it.code} 数量 ${it.quantity} 平均 ${it.averagePrice.number()} 最新 ${it.latestPrice.number()} 評価額 ${it.value.yen()}")
             }
         }
     }
@@ -127,13 +126,13 @@ private fun PortfolioCard(summary: PortfolioSummary) {
 
 @Composable
 private fun ChatGptCard(state: TraderUiState, viewModel: TraderViewModel) {
-    AppCard("ChatGPT API") {
+    AppCard("ChatGPT API設定") {
         Text(state.chatGptSettings.maskedKey)
         OutlinedTextField(
             value = state.apiKeyInput,
             onValueChange = viewModel::updateApiKey,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("OpenAI API key") },
+            label = { Text("OpenAI APIキー") },
             visualTransformation = PasswordVisualTransformation(),
             singleLine = true,
         )
@@ -141,22 +140,22 @@ private fun ChatGptCard(state: TraderUiState, viewModel: TraderViewModel) {
             value = state.modelInput,
             onValueChange = viewModel::updateModel,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Model") },
+            label = { Text("モデル") },
             singleLine = true,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = viewModel::saveChatGptSettings) { Text("Save") }
-            TextButton(onClick = viewModel::clearApiKey) { Text("Clear") }
+            Button(onClick = viewModel::saveChatGptSettings) { Text("保存") }
+            TextButton(onClick = viewModel::clearApiKey) { Text("削除") }
         }
     }
 }
 
 @Composable
 private fun MarketCard(state: TraderUiState, viewModel: TraderViewModel) {
-    AppCard("Market Data") {
-        Text("Local generated price history is bundled in the app.")
+    AppCard("マーケットデータ") {
+        Text("アプリ内で生成したローカル価格履歴を使用します。")
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = viewModel::regeneratePrices) { Text("Regenerate") }
+            Button(onClick = viewModel::regeneratePrices) { Text("価格を再生成") }
         }
         state.scores.take(8).forEach {
             ScoreRow(it)
@@ -166,24 +165,24 @@ private fun MarketCard(state: TraderUiState, viewModel: TraderViewModel) {
 
 @Composable
 private fun ScoreRow(item: ScoreItem) {
-    Text("${item.code} ${item.action} score ${item.score.percent()} latest ${item.latestPrice.number()}")
+    Text("${item.code} ${item.action} スコア ${item.score.percent()} 最新 ${item.latestPrice.number()}")
 }
 
 @Composable
 private fun TradingCard(state: TraderUiState, viewModel: TraderViewModel) {
-    AppCard("Manual Trade") {
+    AppCard("手動売買") {
         OutlinedTextField(
             value = state.tradeCode,
             onValueChange = viewModel::updateTradeCode,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Code") },
+            label = { Text("銘柄コード") },
             singleLine = true,
         )
         OutlinedTextField(
             value = state.tradeQuantity,
             onValueChange = viewModel::updateTradeQuantity,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Quantity") },
+            label = { Text("数量") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
             singleLine = true,
         )
@@ -191,36 +190,36 @@ private fun TradingCard(state: TraderUiState, viewModel: TraderViewModel) {
             value = state.tradePrice,
             onValueChange = viewModel::updateTradePrice,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Price") },
+            label = { Text("価格") },
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
             singleLine = true,
         )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = viewModel::buyCheck) { Text("Check") }
-            Button(onClick = viewModel::buy) { Text("Buy") }
-            TextButton(onClick = viewModel::sell) { Text("Sell") }
+            Button(onClick = viewModel::buyCheck) { Text("確認") }
+            Button(onClick = viewModel::buy) { Text("買い") }
+            TextButton(onClick = viewModel::sell) { Text("売り") }
         }
     }
 }
 
 @Composable
 private fun BacktestCard(state: TraderUiState, viewModel: TraderViewModel) {
-    AppCard("Backtest") {
+    AppCard("バックテスト") {
         OutlinedTextField(
             value = state.backtestStart,
             onValueChange = viewModel::updateBacktestStart,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Start date") },
+            label = { Text("開始日") },
             singleLine = true,
         )
         OutlinedTextField(
             value = state.backtestEnd,
             onValueChange = viewModel::updateBacktestEnd,
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("End date") },
+            label = { Text("終了日") },
             singleLine = true,
         )
-        Button(onClick = viewModel::runBacktest) { Text("Run") }
+        Button(onClick = viewModel::runBacktest) { Text("実行") }
         state.runs.forEach {
             BacktestRunRow(it)
         }
@@ -229,15 +228,15 @@ private fun BacktestCard(state: TraderUiState, viewModel: TraderViewModel) {
 
 @Composable
 private fun BacktestRunRow(run: BacktestRun) {
-    Text("#${run.id} ${run.startDate} to ${run.endDate}")
-    Text("Value ${run.finalValue.yen()} return ${run.totalReturn.percent()} trades ${run.tradesCount}")
+    Text("#${run.id} ${run.startDate} から ${run.endDate}")
+    Text("最終資産 ${run.finalValue.yen()} リターン ${run.totalReturn.percent()} 売買回数 ${run.tradesCount}")
 }
 
 @Composable
 private fun WatchlistCard(items: List<WatchItem>) {
-    AppCard("Watchlist") {
+    AppCard("ウォッチリスト") {
         items.take(31).forEach {
-            Text("${it.code} ${it.name} latest ${it.latestPrice.number()}")
+            Text("${it.code} ${it.name} 最新 ${it.latestPrice.number()}")
         }
     }
 }
