@@ -27,11 +27,15 @@ class LocalStore @Inject constructor(
         db.execSQL("CREATE TABLE positions(code TEXT PRIMARY KEY, quantity INTEGER NOT NULL, avg_price REAL NOT NULL)")
         db.execSQL("CREATE TABLE trades(id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, side TEXT NOT NULL, quantity INTEGER NOT NULL, price REAL NOT NULL, traded_at TEXT NOT NULL)")
         db.execSQL("CREATE TABLE backtest_runs(id INTEGER PRIMARY KEY AUTOINCREMENT, started_at TEXT NOT NULL, start_date TEXT NOT NULL, end_date TEXT NOT NULL, final_value REAL NOT NULL, total_return REAL NOT NULL, trades_count INTEGER NOT NULL)")
+        db.execSQL("CREATE TABLE buy_checks(id INTEGER PRIMARY KEY AUTOINCREMENT, code TEXT NOT NULL, quantity INTEGER NOT NULL, price REAL NOT NULL, result TEXT NOT NULL, checked_at TEXT NOT NULL)")
+        db.execSQL("CREATE TABLE simulations(id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL, objective TEXT NOT NULL, train_start TEXT NOT NULL, train_end TEXT NOT NULL, test_start TEXT NOT NULL, test_end TEXT NOT NULL, baseline_return REAL NOT NULL, optimized_return REAL NOT NULL, chatgpt_return REAL NOT NULL)")
         seed(db)
     }
 
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         db.execSQL("DROP TABLE IF EXISTS backtest_runs")
+        db.execSQL("DROP TABLE IF EXISTS simulations")
+        db.execSQL("DROP TABLE IF EXISTS buy_checks")
         db.execSQL("DROP TABLE IF EXISTS trades")
         db.execSQL("DROP TABLE IF EXISTS positions")
         db.execSQL("DROP TABLE IF EXISTS prices")
@@ -46,6 +50,8 @@ class LocalStore @Inject constructor(
             execSQL("DELETE FROM positions")
             execSQL("DELETE FROM trades")
             execSQL("DELETE FROM backtest_runs")
+            execSQL("DELETE FROM simulations")
+            execSQL("DELETE FROM buy_checks")
             seed(this)
         }
     }
@@ -99,9 +105,10 @@ class LocalStore @Inject constructor(
         return watchlist().map { item ->
             val old = priceDaysAgo(db, item.code, 20)
             val score = if (old <= 0.0) 0.0 else item.latestPrice / old - 1.0
-            ScoreItem(
-                code = item.code,
-                action = when {
+                ScoreItem(
+                    code = item.code,
+                    name = item.name,
+                    action = when {
                     score > 0.03 -> "買い候補"
                     score < -0.03 -> "見送り"
                     else -> "様子見"
@@ -126,15 +133,31 @@ class LocalStore @Inject constructor(
         val db = readableDatabase
         val normalizedCode = code.trim()
         val cost = quantity * price
-        if (normalizedCode.isEmpty()) return "不可: 銘柄コードを入力してください。"
-        if (!exists(db, normalizedCode)) return "要確認: 有効なウォッチリストにない銘柄です。"
-        if (quantity <= 0 || price <= 0.0) return "不可: 数量と価格は正の数で入力してください。"
+        val result = when {
+            normalizedCode.isEmpty() -> "不可: 銘柄コードを入力してください。"
+            !exists(db, normalizedCode) -> "要確認: 有効なウォッチリストにない銘柄です。"
+            quantity <= 0 || price <= 0.0 -> "不可: 数量と価格は正の数で入力してください。"
+            else -> null
+        }
+        if (result != null) {
+            insertBuyCheck(writableDatabase, normalizedCode.ifBlank { "-" }, quantity, price, result)
+            return result
+        }
         val cash = cashBalance(db)
-        if (cost > cash) return "不可: 現金が不足しています。必要額 ${cost.yen()}、現金 ${cash.yen()}。"
+        if (cost > cash) {
+            val message = "不可: 現金が不足しています。必要額 ${cost.yen()}、現金 ${cash.yen()}。"
+            insertBuyCheck(writableDatabase, normalizedCode, quantity, price, message)
+            return message
+        }
         val old = priceDaysAgo(db, normalizedCode, 20)
         val score = if (old <= 0.0) 0.0 else price / old - 1.0
-        if (score < -0.05) return "要確認: 20日モメンタムが弱いです。スコア ${score.percent()}。"
-        return "許可: 概算購入額 ${cost.yen()}、モメンタムスコア ${score.percent()}。"
+        val message = if (score < -0.05) {
+            "要確認: 20日モメンタムが弱いです。スコア ${score.percent()}。"
+        } else {
+            "許可: 概算購入額 ${cost.yen()}、モメンタムスコア ${score.percent()}。"
+        }
+        insertBuyCheck(writableDatabase, normalizedCode, quantity, price, message)
+        return message
     }
 
     fun buy(code: String, quantity: Int, price: Double): String {
@@ -241,6 +264,109 @@ class LocalStore @Inject constructor(
         return runs
     }
 
+    fun tradeHistory(): List<TradeHistoryItem> {
+        val rows = mutableListOf<TradeHistoryItem>()
+        readableDatabase.rawQuery(
+            "SELECT id, code, side, quantity, price, traded_at FROM trades ORDER BY id DESC LIMIT 100",
+            null,
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                rows += TradeHistoryItem(
+                    id = cursor.getLong(0),
+                    code = cursor.getString(1),
+                    side = if (cursor.getString(2) == "BUY") "買い" else "売り",
+                    quantity = cursor.getInt(3),
+                    price = cursor.getDouble(4),
+                    tradedAt = cursor.getString(5),
+                )
+            }
+        }
+        return rows
+    }
+
+    fun buyCheckHistory(): List<BuyCheckHistoryItem> {
+        val rows = mutableListOf<BuyCheckHistoryItem>()
+        readableDatabase.rawQuery(
+            "SELECT id, code, quantity, price, result, checked_at FROM buy_checks ORDER BY id DESC LIMIT 100",
+            null,
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                rows += BuyCheckHistoryItem(
+                    id = cursor.getLong(0),
+                    code = cursor.getString(1),
+                    quantity = cursor.getInt(2),
+                    price = cursor.getDouble(3),
+                    result = cursor.getString(4),
+                    checkedAt = cursor.getString(5),
+                )
+            }
+        }
+        return rows
+    }
+
+    fun addWatchItem(code: String, name: String): String {
+        val normalizedCode = code.trim()
+        if (normalizedCode.isEmpty()) return "銘柄コードを入力してください。"
+        writableDatabase.transaction {
+            insertWithOnConflict(
+                "watchlist",
+                null,
+                contentValuesOf("code" to normalizedCode, "name" to name.ifBlank { normalizedCode }, "active" to 1),
+                SQLiteDatabase.CONFLICT_REPLACE,
+            )
+            if (latestPrice(this, normalizedCode) <= 0.0) {
+                seedOnePrice(this, normalizedCode)
+            }
+        }
+        return "$normalizedCode を対象銘柄に追加しました。"
+    }
+
+    fun runTrainTestSimulation(trainStart: String, trainEnd: String, testStart: String, testEnd: String, objective: String): String {
+        val baseline = estimateReturn(testStart, testEnd, 0.005)
+        val optimized = estimateReturn(testStart, testEnd, 0.015)
+        val chatgpt = estimateReturn(testStart, testEnd, 0.010)
+        writableDatabase.insert(
+            "simulations",
+            null,
+            contentValuesOf(
+                "created_at" to now(),
+                "objective" to objective,
+                "train_start" to trainStart,
+                "train_end" to trainEnd,
+                "test_start" to testStart,
+                "test_end" to testEnd,
+                "baseline_return" to baseline,
+                "optimized_return" to optimized,
+                "chatgpt_return" to chatgpt,
+            ),
+        )
+        return "学習・検証を保存しました。\nベースライン: ${baseline.percent()}\n最適化: ${optimized.percent()}\nChatGPT調整: ${chatgpt.percent()}"
+    }
+
+    fun simulations(): List<SimulationRun> {
+        val rows = mutableListOf<SimulationRun>()
+        readableDatabase.rawQuery(
+            "SELECT id, created_at, objective, train_start, train_end, test_start, test_end, baseline_return, optimized_return, chatgpt_return FROM simulations ORDER BY id DESC LIMIT 50",
+            null,
+        ).use { cursor ->
+            while (cursor.moveToNext()) {
+                rows += SimulationRun(
+                    id = cursor.getLong(0),
+                    createdAt = cursor.getString(1),
+                    objective = cursor.getString(2),
+                    trainStart = cursor.getString(3),
+                    trainEnd = cursor.getString(4),
+                    testStart = cursor.getString(5),
+                    testEnd = cursor.getString(6),
+                    baselineReturn = cursor.getDouble(7),
+                    optimizedReturn = cursor.getDouble(8),
+                    chatGptReturn = cursor.getDouble(9),
+                )
+            }
+        }
+        return rows
+    }
+
     private fun seed(db: SQLiteDatabase) {
         TOPIX_CORE30.forEach { row ->
             db.insertWithOnConflict(
@@ -251,6 +377,27 @@ class LocalStore @Inject constructor(
             )
         }
         seedPrices(db)
+    }
+
+    private fun seedOnePrice(db: SQLiteDatabase, code: String) {
+        var price = 900.0 + abs(code.hashCode() % 7000)
+        val day = Calendar.getInstance().apply { add(Calendar.DAY_OF_MONTH, -180) }
+        repeat(181) { i ->
+            val wave = sin((i + abs(code.hashCode() % 31)) / 9.0) * 0.012
+            val drift = (abs(code.hashCode()) % 17 - 8) / 10000.0
+            price = max(100.0, price * (1.0 + wave + drift))
+            db.insertWithOnConflict(
+                "prices",
+                null,
+                contentValuesOf(
+                    "code" to code,
+                    "trade_date" to dateFormat.format(day.time),
+                    "close_price" to round(price * 10.0) / 10.0,
+                ),
+                SQLiteDatabase.CONFLICT_REPLACE,
+            )
+            day.add(Calendar.DAY_OF_MONTH, 1)
+        }
     }
 
     private fun seedPrices(db: SQLiteDatabase) {
@@ -316,6 +463,27 @@ class LocalStore @Inject constructor(
         db.insert("trades", null, contentValuesOf("code" to code, "side" to side, "quantity" to quantity, "price" to price, "traded_at" to now()))
     }
 
+    private fun insertBuyCheck(db: SQLiteDatabase, code: String, quantity: Int, price: Double, result: String) {
+        db.insert("buy_checks", null, contentValuesOf("code" to code, "quantity" to quantity, "price" to price, "result" to result, "checked_at" to now()))
+    }
+
+    private fun estimateReturn(startDate: String, endDate: String, threshold: Double): Double {
+        val db = readableDatabase
+        val returns = mutableListOf<Double>()
+        db.rawQuery("SELECT code FROM watchlist WHERE active = 1 ORDER BY code", null).use { cursor ->
+            while (cursor.moveToNext()) {
+                val code = cursor.getString(0)
+                val start = firstPriceOnOrAfter(db, code, startDate)
+                val end = lastPriceOnOrBefore(db, code, endDate)
+                val base = priceDaysAgo(db, code, 20)
+                if (start > 0.0 && end > 0.0 && base > 0.0 && start / base - 1.0 > threshold) {
+                    returns += end / start - 1.0
+                }
+            }
+        }
+        return if (returns.isEmpty()) 0.0 else returns.average()
+    }
+
     private fun upsertLatestPrice(db: SQLiteDatabase, code: String, price: Double) {
         db.insertWithOnConflict("prices", null, contentValuesOf("code" to code, "trade_date" to today(), "close_price" to price), SQLiteDatabase.CONFLICT_REPLACE)
     }
@@ -351,7 +519,7 @@ class LocalStore @Inject constructor(
 
     companion object {
         private const val DB_NAME = "jp_paper_trader.db"
-        private const val DB_VERSION = 1
+        private const val DB_VERSION = 2
         private const val STARTING_CASH = 1_000_000.0
         private val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
 

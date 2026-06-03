@@ -16,6 +16,9 @@ class TraderRepository @Inject constructor(
     fun watchlist(): List<WatchItem> = store.watchlist()
     fun scores(): List<ScoreItem> = store.scores()
     fun backtestRuns(): List<BacktestRun> = store.backtestRuns()
+    fun tradeHistory(): List<TradeHistoryItem> = store.tradeHistory()
+    fun buyCheckHistory(): List<BuyCheckHistoryItem> = store.buyCheckHistory()
+    fun simulations(): List<SimulationRun> = store.simulations()
     fun regeneratePrices(): String = store.regeneratePrices()
     fun reset(): String {
         store.resetSeed()
@@ -27,6 +30,9 @@ class TraderRepository @Inject constructor(
     fun buy(code: String, quantity: Int, price: Double): String = store.buy(code, quantity, price)
     fun sell(code: String, quantity: Int, price: Double): String = store.sell(code, quantity, price)
     fun runBacktest(startDate: String, endDate: String): String = store.runBacktest(startDate, endDate)
+    fun addWatchItem(code: String, name: String): String = store.addWatchItem(code, name)
+    fun runTrainTestSimulation(trainStart: String, trainEnd: String, testStart: String, testEnd: String, objective: String): String =
+        store.runTrainTestSimulation(trainStart, trainEnd, testStart, testEnd, objective)
 
     fun settings(): ChatGptSettings = ChatGptSettings(
         apiKey = preferences.getString(KEY_OPENAI_API_KEY, "").orEmpty(),
